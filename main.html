@@ -1,0 +1,1403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Understat Treemap Explorer</title>
+  <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+  <style>
+    :root {
+      --bg: #0c1020;
+      --panel: #12162b;
+      --panel-2: #0f1427;
+      --accent: #f59e0b;
+      --text: #f1f5f9;
+      --muted: #9aa6c3;
+      --edge: rgba(255,255,255,0.08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 28px;
+      font-family: "Palatino Linotype", "Book Antiqua", Palatino, serif;
+      background:
+        radial-gradient(circle at 10% 10%, #1d2b5f 0%, rgba(29,43,95,0) 45%),
+        radial-gradient(circle at 80% 15%, #4b1f3a 0%, rgba(75,31,58,0) 50%),
+        linear-gradient(180deg, #0c1020 0%, #0b0f1c 100%);
+      color: var(--text);
+    }
+    h1 { margin: 0 0 6px; font-size: 28px; letter-spacing: 0.5px; }
+    h2 { margin: 0 0 8px; font-size: 18px; letter-spacing: 0.4px; }
+    p { margin: 0 0 10px; color: var(--muted); }
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(260px, 320px) 1fr;
+      gap: 18px;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--edge);
+      border-radius: 14px;
+      padding: 16px;
+      box-shadow: 0 20px 45px rgba(0,0,0,0.35);
+    }
+    .panel.subtle { background: var(--panel-2); }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 14px;
+    }
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: rgba(245,158,11,0.15);
+      color: var(--accent);
+      font-size: 12px;
+      border: 1px solid rgba(245,158,11,0.3);
+    }
+    .control-group { margin-bottom: 14px; }
+    label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+    select, input[type="text"], input[type="number"] {
+      width: 100%;
+      background: #0d1326;
+      border: 1px solid var(--edge);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-family: inherit;
+    }
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+    }
+    .range-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 6px;
+    }
+    .value-pill {
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: rgba(245,158,11,0.12);
+      border: 1px solid rgba(245,158,11,0.35);
+      color: var(--accent);
+      font-size: 11px;
+      min-width: 34px;
+      text-align: center;
+    }
+    .option-list {
+      max-height: 220px;
+      overflow: auto;
+      padding: 8px;
+      background: #0d1326;
+      border: 1px solid var(--edge);
+      border-radius: 8px;
+    }
+    .option {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      margin: 4px 0;
+      color: var(--text);
+    }
+    .option input { accent-color: var(--accent); }
+    .mini-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 6px;
+    }
+    .mini-actions button {
+      flex: 1;
+      background: #1a2443;
+      color: var(--text);
+      border: 1px solid var(--edge);
+      border-radius: 8px;
+      padding: 6px 8px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .mini-actions button:hover { border-color: rgba(245,158,11,0.5); }
+    #treemap {
+      width: 100%;
+      height: 620px;
+      position: relative;
+    }
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin: 6px 0 12px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .stat-legend {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+    .no-data {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      color: var(--muted);
+    }
+    .legend-item { display: inline-flex; align-items: center; gap: 6px; }
+    .swatch {
+      width: 12px;
+      height: 12px;
+      border-radius: 3px;
+      border: 1px solid rgba(255,255,255,0.2);
+    }
+    .color-gradient {
+      height: 10px;
+      border-radius: 999px;
+      background: linear-gradient(90deg, #e2e8f0, #0ea5e9, #1e3a8a);
+      border: 1px solid rgba(255,255,255,0.2);
+      margin-top: 6px;
+    }
+    .gradient-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+    .tooltip {
+      position: absolute;
+      pointer-events: none;
+      background: rgba(12,16,32,0.96);
+      border: 1px solid var(--edge);
+      border-radius: 10px;
+      padding: 10px 12px;
+      color: var(--text);
+      font-size: 12px;
+      box-shadow: 0 12px 30px rgba(0,0,0,0.45);
+    }
+    .statline { color: var(--muted); margin-top: 4px; }
+    .footer-note { font-size: 12px; color: var(--muted); margin-top: 10px; }
+    .detail-card {
+      background: #0e1428;
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 12px;
+      padding: 14px 16px;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.03);
+    }
+    .detail-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+    .detail-name {
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 0.2px;
+    }
+    .detail-pill {
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: rgba(245,158,11,0.15);
+      border: 1px solid rgba(245,158,11,0.35);
+      color: var(--accent);
+    }
+    .detail-sub {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 10px;
+    }
+    .detail-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(120px, 1fr));
+      gap: 10px;
+    }
+    .detail-box {
+      background: #0c1224;
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 10px;
+      padding: 10px 12px;
+    }
+    .detail-label {
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      margin-bottom: 4px;
+    }
+    .detail-value {
+      font-size: 14px;
+      font-weight: 600;
+    }
+    .detail-lines {
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.6;
+    }
+    .shot-map {
+      position: relative;
+      width: 680px;
+      max-width: 100%;
+      height: 360px;
+      background: #0c1224;
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .shot-map-wrap {
+      display: flex;
+      justify-content: flex-start;
+    }
+    .shot-filters {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin: 6px 0 10px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .shot-filters label {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--muted);
+      margin: 0;
+    }
+    .shot-stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 10px;
+      margin-bottom: 10px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .shot-stat-card {
+      background: #0c1224;
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 10px;
+      padding: 10px 12px;
+    }
+    .shot-stat-title {
+      font-size: 12px;
+      color: var(--text);
+      margin-bottom: 6px;
+    }
+    .shot-stat-line {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .shot-legend {
+      display: flex;
+      gap: 18px;
+      flex-wrap: wrap;
+      margin: 10px 0 12px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .legend-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 6px;
+    }
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+    }
+    .legend-shape {
+      width: 12px;
+      height: 12px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .shot-tooltip {
+      position: absolute;
+      pointer-events: none;
+      background: rgba(12,16,32,0.96);
+      border: 1px solid var(--edge);
+      border-radius: 10px;
+      padding: 10px 12px;
+      color: var(--text);
+      font-size: 12px;
+      box-shadow: 0 12px 30px rgba(0,0,0,0.45);
+    }
+    @media (max-width: 980px) {
+      .layout { grid-template-columns: 1fr; }
+      #treemap { height: 520px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="panel">
+    <div class="header">
+      <div>
+        <h1>Understat Treemap Explorer</h1>
+        <p>Compare player attributes across leagues, teams, and positions using an interactive treemap.</p>
+      </div>
+      <span id="status" class="badge">Loading...</span>
+    </div>
+  </div>
+
+  <div class="layout">
+    <div class="panel subtle">
+      <h2>Controls</h2>
+      <div class="control-group">
+        <label for="size-metric">Size metric</label>
+        <select id="size-metric"></select>
+      </div>
+
+      <div class="control-group">
+        <label for="color-metric">Color metric</label>
+        <select id="color-metric"></select>
+        <div class="color-gradient" id="color-gradient"></div>
+        <div class="gradient-labels">
+          <span id="color-min">0</span>
+          <span id="color-max">0</span>
+        </div>
+      </div>
+
+      <div class="control-group">
+        <label for="max-depth">Max depth</label>
+        <input type="range" id="max-depth" min="1" max="4" step="1" value="4" />
+        <div class="range-row">
+          <span>Depth</span>
+          <span class="value-pill" id="max-depth-value">4</span>
+        </div>
+      </div>
+
+      <div class="control-group">
+        <label for="min-minutes">Min minutes played</label>
+        <input type="range" id="min-minutes" min="0" max="3000" step="50" value="0" />
+        <div class="range-row">
+          <span>Threshold</span>
+          <span class="value-pill" id="min-minutes-value">0</span>
+          <span>of</span>
+          <span class="value-pill" id="min-minutes-max">0</span>
+        </div>
+      </div>
+
+      <div class="control-group">
+        <label>Leagues</label>
+        <div class="option-list" id="league-options"></div>
+        <div class="mini-actions">
+          <button data-action="all" data-target="league">All</button>
+          <button data-action="none" data-target="league">None</button>
+        </div>
+      </div>
+
+      <div class="control-group">
+        <label>Seasons</label>
+        <div class="option-list" id="season-options"></div>
+        <div class="mini-actions">
+          <button data-action="all" data-target="season">All</button>
+          <button data-action="none" data-target="season">None</button>
+        </div>
+      </div>
+
+      <div class="control-group">
+        <label>Positions</label>
+        <div class="option-list" id="position-options"></div>
+        <div class="mini-actions">
+          <button data-action="all" data-target="position">All</button>
+          <button data-action="none" data-target="position">None</button>
+        </div>
+      </div>
+
+      <div class="control-group">
+        <label>Teams</label>
+        <div class="option-list" id="team-options"></div>
+        <div class="mini-actions">
+          <button data-action="all" data-target="team">All</button>
+          <button data-action="none" data-target="team">None</button>
+        </div>
+      </div>
+
+      <div class="control-group">
+        <label for="player-scope">Player selection</label>
+        <select id="player-scope">
+          <option value="all">All players</option>
+          <option value="top">Top N players</option>
+          <option value="bottom">Bottom N players</option>
+        </select>
+      </div>
+
+      <div class="control-group">
+        <label for="player-count">N players</label>
+        <input type="number" id="player-count" value="10" min="1" step="1" />
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Treemap</h2>
+      <p>Hierarchy: Season -> League -> Team -> Player.</p>
+      <div class="stat-legend" id="stat-legend"></div>
+      <div id="treemap"></div>
+      <div class="footer-note" id="summary"></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Player Detail</h2>
+    <p>Click a player tile to see season-specific stats.</p>
+    <div id="player-detail" class="detail-card">
+      <div class="detail-header">
+        <div class="detail-name">Select a player</div>
+        <div class="detail-pill">No selection</div>
+      </div>
+      <div class="detail-sub">Click a player tile to view season-specific stats.</div>
+      <div class="detail-grid">
+        <div class="detail-box">
+          <div class="detail-label">Size Metric</div>
+          <div class="detail-value">-</div>
+        </div>
+        <div class="detail-box">
+          <div class="detail-label">Color Metric</div>
+          <div class="detail-value">-</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Shot Map</h2>
+    <p>Shots update when a player is selected.</p>
+    <div class="shot-legend">
+      <div>
+        <div class="detail-label">Shot Type</div>
+        <div class="legend-row" id="shot-type-legend"></div>
+        <div class="shot-filters" id="shot-type-filters">
+          <label><input type="checkbox" class="shot-type-filter" value="right" checked /> Right Foot</label>
+          <label><input type="checkbox" class="shot-type-filter" value="left" checked /> Left Foot</label>
+          <label><input type="checkbox" class="shot-type-filter" value="head" checked /> Head</label>
+          <label><input type="checkbox" class="shot-type-filter" value="other" checked /> Other Types</label>
+        </div>
+      </div>
+      <div>
+        <div class="detail-label">Result</div>
+        <div class="legend-row" id="shot-result-legend"></div>
+        <div class="shot-filters" id="shot-result-filters">
+          <label><input type="checkbox" class="shot-result-filter" value="goal" checked /> Goal</label>
+          <label><input type="checkbox" class="shot-result-filter" value="miss" checked /> Missed</label>
+          <label><input type="checkbox" class="shot-result-filter" value="saved" checked /> Saved</label>
+          <label><input type="checkbox" class="shot-result-filter" value="blocked" checked /> Blocked</label>
+          <label><input type="checkbox" class="shot-result-filter" value="other" checked /> Other Results</label>
+        </div>
+      </div>
+    </div>
+    <div class="shot-stats" id="shot-stats"></div>
+    <div class="shot-map-wrap">
+      <div id="shot-map" class="shot-map"></div>
+    </div>
+  </div>
+
+  <script>
+    const leagues = ["Bundesliga", "EPL", "La_Liga", "Ligue_1", "Serie_A"];
+    const leagueLabels = {
+      Bundesliga: "Bundesliga",
+      EPL: "Premier League",
+      La_Liga: "La Liga",
+      Ligue_1: "Ligue 1",
+      Serie_A: "Serie A"
+    };
+    const positions = ["Forward", "Midfielder", "Defender", "Goalkeeper"];
+    const metrics = [
+      { key: "goals", label: "Goals" },
+      { key: "assists", label: "Assists" },
+      { key: "xG", label: "Expected Goals (xG)" },
+      { key: "xA", label: "Expected Assists (xA)" },
+      { key: "shots", label: "Shots" },
+      { key: "key_passes", label: "Key Passes" },
+      { key: "games", label: "Games" },
+      { key: "time", label: "Minutes" },
+      { key: "gp90", label: "Goals per 90" },
+      { key: "ap90", label: "Assists per 90" },
+      { key: "xG_per90", label: "xG per 90" },
+      { key: "xA_per90", label: "xA per 90" }
+    ];
+
+    const statusEl = d3.select("#status");
+    const treemapEl = d3.select("#treemap");
+    const summaryEl = d3.select("#summary");
+    const detailEl = d3.select("#player-detail");
+    const statLegendEl = d3.select("#stat-legend");
+    const leagueOptionsEl = d3.select("#league-options");
+    const seasonOptionsEl = d3.select("#season-options");
+    const positionOptionsEl = d3.select("#position-options");
+    const teamOptionsEl = d3.select("#team-options");
+    const sizeMetricSelect = d3.select("#size-metric");
+    const colorMetricSelect = d3.select("#color-metric");
+    const colorGradientEl = d3.select("#color-gradient");
+    const colorMinEl = d3.select("#color-min");
+    const colorMaxEl = d3.select("#color-max");
+    const maxDepthInput = d3.select("#max-depth");
+    const maxDepthValue = d3.select("#max-depth-value");
+    const minMinutesInput = d3.select("#min-minutes");
+    const minMinutesValue = d3.select("#min-minutes-value");
+    const minMinutesMax = d3.select("#min-minutes-max");
+    const playerScopeSelect = d3.select("#player-scope");
+    const playerCountInput = d3.select("#player-count");
+    const shotMapEl = d3.select("#shot-map");
+    const shotTypeLegendEl = d3.select("#shot-type-legend");
+    const shotResultLegendEl = d3.select("#shot-result-legend");
+    const shotStatsEl = d3.select("#shot-stats");
+    const shotTypeFiltersEl = document.getElementById("shot-type-filters");
+    const shotResultFiltersEl = document.getElementById("shot-result-filters");
+
+    let allPlayers = [];
+    let allShots = [];
+    let currentPlayer = null;
+    let teamFilterTouched = false;
+
+    function detectSeparator(firstLine) {
+      const comma = (firstLine.match(/,/g) || []).length;
+      const semi = (firstLine.match(/;/g) || []).length;
+      return semi > comma ? ";" : ",";
+    }
+
+    async function loadCSV(path) {
+      const text = await d3.text(path);
+      const firstLine = text.split(/\r?\n/, 1)[0] || "";
+      const sep = detectSeparator(firstLine);
+      return d3.dsvFormat(sep).parse(text);
+    }
+
+    function normalizePosition(raw) {
+      const text = (raw || "").toUpperCase();
+      if (text.includes("G")) return "Goalkeeper";
+      if (text.includes("D")) return "Defender";
+      if (text.includes("M")) return "Midfielder";
+      if (text.includes("F") || text.includes("S")) return "Forward";
+      return "Midfielder";
+    }
+
+    async function loadAllPlayers() {
+      const datasets = await Promise.all(
+        leagues.map(async league => {
+          const rows = await loadCSV(`archive/understats/${league}/player.csv`);
+          return rows.flatMap(d => {
+            const time = +d.time || 0;
+            const goals = +d.goals || 0;
+            const assists = +d.assists || 0;
+            const xG = +d.xG || 0;
+            const xA = +d.xA || 0;
+            const gp90 = time > 0 ? (goals * 90) / time : 0;
+            const ap90 = time > 0 ? (assists * 90) / time : 0;
+            const xG_per90 = time > 0 ? (xG * 90) / time : 0;
+            const xA_per90 = time > 0 ? (xA * 90) / time : 0;
+            const rawTeams = (d.team_title || "Unknown Team")
+              .split(",")
+              .map(team => team.trim())
+              .filter(Boolean);
+            const teams = rawTeams.length > 0 ? rawTeams : ["Unknown Team"];
+            return teams.map(team => ({
+              id: d.id ? `${d.id}-${team}` : `${league}-${d.player_name}-${team}-${d.year}`,
+              season: d.year ? String(d.year) : "Unknown",
+              league,
+              team,
+              name: d.player_name || "Unknown Player",
+              position: normalizePosition(d.position),
+              playerId: d.id ? String(d.id) : null,
+              goals,
+              assists,
+              xG,
+              xA,
+              shots: +d.shots || 0,
+              key_passes: +d.key_passes || 0,
+              games: +d.games || 0,
+              time,
+              gp90,
+              ap90,
+              xG_per90,
+              xA_per90
+            }));
+          });
+        })
+      );
+      return datasets.flat();
+    }
+
+    async function loadAllShots() {
+      const datasets = await Promise.all(
+        leagues.map(async league => {
+          const rows = await loadCSV(`archive/understats/${league}/shot_data.csv`);
+          return rows.map(d => ({
+            league,
+            season: d.season ? String(d.season) : "Unknown",
+            player: d.player || "Unknown Player",
+            playerId: d.player_id ? String(d.player_id) : null,
+            minute: +d.minute || 0,
+            result: d.result || "",
+            x: +d.X,
+            y: +d.Y,
+            xG: +d.xG || 0,
+            situation: d.situation || "Unknown",
+            shotType: d.shotType || "",
+            matchId: d.match_id ? String(d.match_id) : "",
+            hTeam: d.h_team || "",
+            aTeam: d.a_team || "",
+            date: d.date || "",
+            assistedBy: d.player_assisted || "N/A",
+            lastAction: d.lastAction || "N/A"
+          }));
+        })
+      );
+      return datasets.flat();
+    }
+
+    function buildOptions(container, items, type, selectedSet) {
+      container.selectAll("*").remove();
+      items.forEach(item => {
+        const value = typeof item === "string" ? item : item.value;
+        const label = typeof item === "string" ? item : item.label;
+        const id = `${type}-${value}`.replace(/[^a-zA-Z0-9_-]/g, "");
+        const row = container.append("label").attr("class", "option").attr("for", id);
+        row.append("input")
+          .attr("type", "checkbox")
+          .attr("id", id)
+          .attr("data-type", type)
+          .attr("value", value)
+          .property("checked", selectedSet.has(value));
+        row.append("span").text(label);
+      });
+    }
+
+    function getSelected(type) {
+      const nodes = document.querySelectorAll(`input[data-type="${type}"]`);
+      return new Set(Array.from(nodes).filter(n => n.checked).map(n => n.value));
+    }
+
+    function setAll(type, checked) {
+      document.querySelectorAll(`input[data-type="${type}"]`).forEach(n => {
+        n.checked = checked;
+      });
+    }
+
+    function setMetricOptions(selectEl, selectedKey) {
+      selectEl.selectAll("*").remove();
+      metrics.forEach(metric => {
+        selectEl.append("option").attr("value", metric.key).text(metric.label);
+      });
+      selectEl.property("value", selectedKey);
+    }
+
+    function updateStatLegend(sizeKey, colorKey) {
+      const sizeLabel = metrics.find(m => m.key === sizeKey)?.label || sizeKey;
+      const colorLabel = metrics.find(m => m.key === colorKey)?.label || colorKey;
+      statLegendEl.text(`Size = ${sizeLabel} | Color = ${colorLabel}`);
+    }
+
+    function updateColorGradient(extent) {
+      const interpolator = d3.interpolateYlGnBu;
+      const stops = d3.range(0, 11).map(i => {
+        const t = i / 10;
+        return `${interpolator(t)} ${t * 100}%`;
+      });
+      colorGradientEl.style("background", `linear-gradient(90deg, ${stops.join(", ")})`);
+      if (extent && Number.isFinite(extent[0]) && Number.isFinite(extent[1])) {
+        const fmt = d3.format(".2f");
+        colorMinEl.text(fmt(extent[0]));
+        colorMaxEl.text(fmt(extent[1]));
+      } else {
+        colorMinEl.text("N/A");
+        colorMaxEl.text("N/A");
+      }
+    }
+
+    const shotTypeMap = [
+      { key: "right", label: "Right Foot", shape: d3.symbolCircle },
+      { key: "left", label: "Left Foot", shape: d3.symbolTriangle },
+      { key: "head", label: "Head", shape: d3.symbolSquare },
+      { key: "other", label: "Other", shape: d3.symbolDiamond }
+    ];
+    const shotResultMap = [
+      { key: "goal", label: "Goal", color: "#22c55e" },
+      { key: "miss", label: "Missed", color: "#ef4444" },
+      { key: "saved", label: "Saved", color: "#3b82f6" },
+      { key: "blocked", label: "Blocked", color: "#f59e0b" },
+      { key: "other", label: "Other", color: "#9ca3af" }
+    ];
+
+    function normalizeShotType(value) {
+      const text = (value || "").toLowerCase();
+      if (text.includes("right")) return "right";
+      if (text.includes("left")) return "left";
+      if (text.includes("head")) return "head";
+      return "other";
+    }
+
+    function normalizeResult(value) {
+      const text = (value || "").toLowerCase();
+      if (text.includes("goal")) return "goal";
+      if (text.includes("miss") || text.includes("off")) return "miss";
+      if (text.includes("save")) return "saved";
+      if (text.includes("block")) return "blocked";
+      return "other";
+    }
+
+    function renderShotLegends() {
+      shotTypeLegendEl.selectAll("*").remove();
+      shotResultLegendEl.selectAll("*").remove();
+
+      const symbolSize = 80;
+      shotTypeMap.forEach(item => {
+        const row = shotTypeLegendEl.append("div").attr("class", "legend-item");
+        const svg = row.append("svg").attr("class", "legend-shape").attr("viewBox", "-6 -6 12 12");
+        svg.append("path")
+          .attr("d", d3.symbol().type(item.shape).size(symbolSize)())
+          .attr("fill", "#e2e8f0");
+        row.append("span").text(item.label);
+      });
+
+      shotResultMap.forEach(item => {
+        const row = shotResultLegendEl.append("div").attr("class", "legend-item");
+        row.append("span")
+          .attr("class", "legend-shape")
+          .style("background", item.color)
+          .style("border-radius", "3px");
+        row.append("span").text(item.label);
+      });
+    }
+
+    function getShotFilters() {
+      const typeSet = new Set(
+        Array.from(document.querySelectorAll(".shot-type-filter:checked")).map(el => el.value)
+      );
+      const resultSet = new Set(
+        Array.from(document.querySelectorAll(".shot-result-filter:checked")).map(el => el.value)
+      );
+      return { typeSet, resultSet };
+    }
+
+    function renderShotStats(filteredShots, typeSet, resultSet) {
+      shotStatsEl.selectAll("*").remove();
+      if (!filteredShots || filteredShots.length === 0) {
+        shotStatsEl.append("div").attr("class", "footer-note").text("No shots to summarize.");
+        return;
+      }
+
+      const typeOrder = ["right", "left", "head", "other"];
+      const resultOrder = ["goal", "miss", "saved", "blocked", "other"];
+      const typeLabels = {
+        right: "Right Foot",
+        left: "Left Foot",
+        head: "Head",
+        other: "Other Types"
+      };
+      const resultLabels = {
+        goal: "Goal",
+        miss: "Missed",
+        saved: "Saved",
+        blocked: "Blocked",
+        other: "Other Results"
+      };
+
+      const grouped = new Map();
+      filteredShots.forEach(shot => {
+        const typeKey = normalizeShotType(shot.shotType);
+        const resultKey = normalizeResult(shot.result);
+        if (!typeSet.has(typeKey) || !resultSet.has(resultKey)) return;
+        const key = `${typeKey}:${resultKey}`;
+        grouped.set(key, (grouped.get(key) || 0) + 1);
+      });
+
+      typeOrder.forEach(typeKey => {
+        if (!typeSet.has(typeKey)) return;
+        const card = shotStatsEl.append("div").attr("class", "shot-stat-card");
+        card.append("div").attr("class", "shot-stat-title").text(typeLabels[typeKey]);
+        resultOrder.forEach(resultKey => {
+          if (!resultSet.has(resultKey)) return;
+          const count = grouped.get(`${typeKey}:${resultKey}`) || 0;
+          const line = card.append("div").attr("class", "shot-stat-line");
+          line.append("span").text(resultLabels[resultKey]);
+          line.append("span").text(count);
+        });
+      });
+    }
+
+    function renderShotMap(player) {
+      const activePlayer = player || currentPlayer;
+      shotMapEl.selectAll("*").remove();
+      let tooltip = shotMapEl.select(".shot-tooltip");
+      if (tooltip.empty()) {
+        tooltip = shotMapEl.append("div").attr("class", "shot-tooltip").style("opacity", 0);
+      }
+
+      if (!activePlayer) {
+        shotMapEl.append("div").attr("class", "no-data").text("Select a player to view shots.");
+        return;
+      }
+
+      const { typeSet, resultSet } = getShotFilters();
+      const shots = allShots.filter(shot => {
+        if (shot.league !== activePlayer.league || shot.season !== activePlayer.season) return false;
+        const idMatch = activePlayer.playerId && shot.playerId && shot.playerId === activePlayer.playerId;
+        const nameMatch = shot.player === activePlayer.name;
+        return idMatch || nameMatch;
+      }).filter(shot => Number.isFinite(shot.x) && Number.isFinite(shot.y))
+        .filter(shot => typeSet.has(normalizeShotType(shot.shotType)))
+        .filter(shot => resultSet.has(normalizeResult(shot.result)));
+
+      renderShotStats(shots, typeSet, resultSet);
+      if (shots.length === 0) {
+        shotMapEl.append("div").attr("class", "no-data").text("No shots match the current filters.");
+        return;
+      }
+
+      const width = shotMapEl.node().clientWidth || 900;
+      const height = shotMapEl.node().clientHeight || 360;
+      const padding = 16;
+      const pitchWidth = width - padding * 2;
+      const pitchHeight = height - padding * 2;
+
+      const svg = shotMapEl.append("svg")
+        .attr("width", width)
+        .attr("height", height);
+
+      const pitch = svg.append("g").attr("transform", `translate(${padding},${padding})`);
+      pitch.append("rect")
+        .attr("width", pitchWidth)
+        .attr("height", pitchHeight)
+        .attr("rx", 10)
+        .attr("fill", "#0f172a")
+        .attr("stroke", "rgba(255,255,255,0.2)");
+
+      const boxWidth = pitchWidth * 0.6;
+      const boxHeight = pitchHeight * 0.35;
+      pitch.append("rect")
+        .attr("x", (pitchWidth - boxWidth) / 2)
+        .attr("y", 0)
+        .attr("width", boxWidth)
+        .attr("height", boxHeight)
+        .attr("fill", "none")
+        .attr("stroke", "rgba(255,255,255,0.35)");
+
+      const sixWidth = pitchWidth * 0.3;
+      const sixHeight = pitchHeight * 0.16;
+      pitch.append("rect")
+        .attr("x", (pitchWidth - sixWidth) / 2)
+        .attr("y", 0)
+        .attr("width", sixWidth)
+        .attr("height", sixHeight)
+        .attr("fill", "none")
+        .attr("stroke", "rgba(255,255,255,0.35)");
+
+      pitch.append("circle")
+        .attr("cx", pitchWidth / 2)
+        .attr("cy", boxHeight * 0.6)
+        .attr("r", 3)
+        .attr("fill", "rgba(255,255,255,0.6)");
+
+      const sizeScale = d3.scaleSqrt()
+        .domain([0, d3.max(shots, d => d.xG) || 1])
+        .range([40, 160])
+        .clamp(true);
+
+      const symbol = d3.symbol()
+        .size(d => sizeScale(d.xG))
+        .type(d => {
+          const key = normalizeShotType(d.shotType);
+          return shotTypeMap.find(s => s.key === key)?.shape || d3.symbolDiamond;
+        });
+
+      pitch.append("g")
+        .selectAll("path")
+        .data(shots)
+        .join("path")
+        .attr("d", symbol)
+        .attr("transform", d => {
+          const x = d.y * pitchWidth;
+          const y = (1 - d.x) * pitchHeight;
+          return `translate(${x},${y})`;
+        })
+        .attr("fill", d => {
+          const key = normalizeResult(d.result);
+          return shotResultMap.find(r => r.key === key)?.color || "#9ca3af";
+        })
+        .attr("stroke", "rgba(255,255,255,0.6)")
+        .attr("stroke-width", 0.5)
+        .attr("opacity", 0.9)
+        .on("mouseenter", (event, d) => {
+          tooltip
+            .style("opacity", 1)
+            .html(
+              `<strong>Minute ${d.minute}</strong><br>` +
+              `xG: ${d.xG.toFixed(2)} | Result: ${d.result || "N/A"}<br>` +
+              `Situation: ${d.situation || "N/A"}<br>` +
+              `Assisted by: ${d.assistedBy || "N/A"}<br>` +
+              `Last action: ${d.lastAction || "N/A"}<br>` +
+              `${d.hTeam || ""} vs ${d.aTeam || ""}<br>` +
+              `${d.date || ""}`
+            );
+        })
+        .on("mousemove", event => {
+          const [x, y] = d3.pointer(event, shotMapEl.node());
+          tooltip.style("left", `${x + 12}px`).style("top", `${y + 12}px`);
+        })
+        .on("mouseleave", () => tooltip.style("opacity", 0));
+    }
+
+    function getPlayerCount() {
+      const value = parseInt(playerCountInput.property("value"), 10);
+      return Number.isFinite(value) && value > 0 ? value : 10;
+    }
+
+    function buildTree(players, sizeMetric, colorMetric) {
+      const seasonGroups = d3.group(players, d => d.season, d => d.league, d => d.team);
+      const root = { name: "Seasons", id: "root", children: [] };
+      for (const [season, leaguesMap] of seasonGroups) {
+        const seasonNode = { name: season, id: `season:${season}`, season, type: "season", children: [] };
+        for (const [league, teams] of leaguesMap) {
+          const leagueName = leagueLabels[league] || league;
+          const leagueNode = {
+            name: leagueName,
+            id: `season:${season}|league:${league}`,
+            league,
+            season,
+            type: "league",
+            children: []
+          };
+          for (const [team, playersList] of teams) {
+            const teamNode = {
+              name: team,
+              id: `season:${season}|league:${league}|team:${team}`,
+              league,
+              season,
+              team,
+              type: "team",
+              children: []
+            };
+            playersList.forEach(player => {
+              teamNode.children.push({
+                name: player.name,
+                id: `player:${player.id}:${season}:${league}:${team}`,
+                league,
+                season,
+                team,
+                position: player.position,
+                type: "player",
+                sizeValue: +player[sizeMetric] || 0,
+                colorValue: Number.isFinite(+player[colorMetric]) ? +player[colorMetric] : null,
+                raw: player
+              });
+            });
+            leagueNode.children.push(teamNode);
+          }
+          seasonNode.children.push(leagueNode);
+        }
+        root.children.push(seasonNode);
+      }
+      return root;
+    }
+
+    function pruneHierarchy(root, maxDepth) {
+      root.each(node => {
+        if (node.depth === maxDepth) {
+          node.children = null;
+        }
+      });
+    }
+
+    function depthLabel(depth) {
+      if (depth === 1) return "Season";
+      if (depth === 2) return "League";
+      if (depth === 3) return "Team";
+      return "Player";
+    }
+
+    function renderTreemap(players) {
+      const sizeMetric = sizeMetricSelect.property("value");
+      const colorMetric = colorMetricSelect.property("value");
+      const maxDepth = +maxDepthInput.property("value");
+      const width = treemapEl.node().clientWidth || 900;
+      const height = treemapEl.node().clientHeight || 620;
+
+      maxDepthValue.text(maxDepth);
+      minMinutesValue.text(minMinutesInput.property("value"));
+
+      updateStatLegend(sizeMetric, colorMetric);
+
+      treemapEl.style("position", "relative");
+      treemapEl.selectAll(".no-data").remove();
+
+      let svg = treemapEl.select("svg");
+      if (svg.empty()) {
+        svg = treemapEl.append("svg");
+      }
+      svg.attr("width", width).attr("height", height);
+
+      let tooltip = treemapEl.select(".tooltip");
+      if (tooltip.empty()) {
+        tooltip = treemapEl.append("div").attr("class", "tooltip").style("opacity", 0);
+      }
+
+      if (players.length === 0) {
+        svg.selectAll("*").remove();
+        treemapEl.append("div").attr("class", "no-data").text("No data with current filters.");
+        return;
+      }
+
+      const tree = buildTree(players, sizeMetric, colorMetric);
+      const root = d3.hierarchy(tree).sum(d => d.sizeValue || 0).sort((a, b) => b.value - a.value);
+
+      root.eachAfter(node => {
+        if (!node.children) {
+          node.data.playerCount = node.data.type === "player" ? 1 : 0;
+          node.data.teamCount = node.data.type === "team" ? 1 : 0;
+          node.data.colorSum = Number.isFinite(node.data.colorValue) ? node.data.colorValue : 0;
+          node.data.colorCount = Number.isFinite(node.data.colorValue) ? 1 : 0;
+        } else {
+          node.data.playerCount = d3.sum(node.children, d => d.data.playerCount || 0);
+          node.data.teamCount = d3.sum(node.children, d => d.data.teamCount || 0);
+          node.data.colorSum = d3.sum(node.children, d => d.data.colorSum || 0);
+          node.data.colorCount = d3.sum(node.children, d => d.data.colorCount || 0);
+        }
+      });
+
+      pruneHierarchy(root, maxDepth);
+
+      const headerHeights = { 1: 24, 2: 20, 3: 16 };
+      const maxHeaderDepth = Math.min(maxDepth, 3);
+      d3.treemap()
+        .size([width, height])
+        .paddingOuter(6)
+        .paddingInner(2)
+        .paddingTop(d => (d.depth <= maxHeaderDepth ? (headerHeights[d.depth] || 12) : 0))(root);
+
+      const nodesAtDepth = root.descendants().filter(d => d.depth === maxDepth);
+      let colorScale = null;
+      let colorExtent = null;
+      const colorValues = nodesAtDepth
+        .map(d => (d.data.colorCount > 0 ? d.data.colorSum : null))
+        .filter(v => Number.isFinite(v));
+      if (colorValues.length > 0) {
+        colorExtent = d3.extent(colorValues);
+        colorScale = d3.scaleSequential().domain(colorExtent).interpolator(d3.interpolateYlGnBu);
+      }
+      updateColorGradient(colorExtent);
+
+      svg.selectAll(".no-data").remove();
+      const nodesData = root.descendants().filter(d => d.depth > 0);
+      const t = svg.transition().duration(400);
+
+      const nodeSel = svg.selectAll("g.node").data(nodesData, d => d.data.id);
+      const nodeEnter = nodeSel.enter().append("g").attr("class", "node").style("opacity", 0);
+      nodeEnter.append("rect").attr("class", "tile");
+      nodeEnter.append("rect").attr("class", "header-bar");
+      nodeEnter.append("text").attr("class", "label");
+      nodeEnter.append("text").attr("class", "leaf-label");
+
+      nodeSel.exit().transition(t).style("opacity", 0).remove();
+
+      const nodeMerge = nodeEnter.merge(nodeSel);
+      nodeMerge.transition(t).style("opacity", 1).attr("transform", d => `translate(${d.x0},${d.y0})`);
+
+      nodeMerge.select("rect.tile")
+        .transition(t)
+        .attr("width", d => Math.max(0, d.x1 - d.x0))
+        .attr("height", d => Math.max(0, d.y1 - d.y0))
+        .attr("fill", d => {
+          const isColorNode = d.depth === maxDepth;
+          if (isColorNode && colorScale) {
+            const value = d.data.colorCount > 0 ? d.data.colorSum : null;
+            return Number.isFinite(value) ? colorScale(value) : "#d1d5db";
+          }
+          if (isColorNode) return "#d1d5db";
+          return "#f8fafc";
+        })
+        .attr("stroke", "#0f172a")
+        .attr("stroke-width", d => (d.depth === 1 ? 2.5 : d.depth === 2 ? 2 : d.depth === 3 ? 1.5 : 1));
+
+      nodeMerge.select("rect.tile")
+        .on("mouseenter", (event, d) => {
+          const sizeLabel = metrics.find(m => m.key === sizeMetric)?.label || sizeMetric;
+          const colorLabel = metrics.find(m => m.key === colorMetric)?.label || colorMetric;
+          if (d.depth === 4 && maxDepth === 4) {
+            const player = d.data.raw;
+            tooltip
+              .style("opacity", 1)
+              .html(
+                `<strong>${player.name}</strong><br>` +
+                `${player.team} - ${leagueLabels[player.league] || player.league} - ${player.season}<br>` +
+                `${player.position}<div class="statline">Minutes: ${player.time}</div>` +
+                `<div class="statline">${sizeLabel}: ${(+player[sizeMetric] || 0).toFixed(2)}</div>` +
+                `<div class="statline">${colorLabel}: ${Number.isFinite(+player[colorMetric]) ? (+player[colorMetric]).toFixed(2) : "N/A"}</div>`
+              );
+          } else {
+            const teamLine = d.depth === 2 ? `<div class="statline">Teams: ${d.data.teamCount || 0}</div>` : "";
+            tooltip
+              .style("opacity", 1)
+              .html(
+                `<strong>${d.data.name}</strong><br>` +
+                `${depthLabel(d.depth)}<div class="statline">${sizeLabel} total: ${d.value.toFixed(2)}</div>` +
+                `${teamLine}` +
+                `<div class="statline">Players: ${d.data.playerCount || 0}</div>`
+              );
+          }
+        })
+        .on("mousemove", event => {
+          tooltip
+            .style("left", `${event.offsetX + 12}px`)
+            .style("top", `${event.offsetY + 12}px`);
+        })
+        .on("mouseleave", () => tooltip.style("opacity", 0))
+        .on("click", (event, d) => {
+          if (d.depth !== 4 || maxDepth !== 4) return;
+          renderPlayerDetail(d.data.raw, sizeMetric, colorMetric);
+        });
+
+      nodeMerge.select("rect.header-bar")
+        .attr("pointer-events", "none")
+        .transition(t)
+        .attr("x", 0)
+        .attr("y", 0)
+        .attr("width", d => Math.max(0, d.x1 - d.x0))
+        .attr("height", d => {
+          const showHeader = d.depth <= maxHeaderDepth && d.depth < 4;
+          return showHeader ? (headerHeights[d.depth] || 12) : 0;
+        })
+        .attr("fill", "rgba(15,23,42,0.7)")
+        .attr("stroke", "rgba(15,23,42,0.9)");
+
+      nodeMerge.select("text.label")
+        .attr("pointer-events", "none")
+        .attr("fill", "#f8fafc")
+        .attr("font-size", d => (d.depth === 1 ? 12 : d.depth === 2 ? 11 : 10))
+        .text(d => {
+          const showHeader = d.depth <= maxHeaderDepth && d.depth < 4;
+          return showHeader ? d.data.name : "";
+        })
+        .each(function(d) {
+          const w = d.x1 - d.x0;
+          const showHeader = d.depth <= maxHeaderDepth && d.depth < 4;
+          const headerHeight = showHeader ? (headerHeights[d.depth] || 12) : 0;
+          const showLabel = headerHeight > 0 && w > 50;
+          const textSel = d3.select(this);
+          if (!showLabel) {
+            textSel.attr("opacity", 0);
+            return;
+          }
+          textSel.attr("opacity", 1);
+          const x = 6;
+          const y = headerHeight - 6;
+          textSel.attr("transform", null).attr("x", x).attr("y", y);
+        });
+
+      nodeMerge.select("text.leaf-label")
+        .attr("pointer-events", "none")
+        .attr("fill", "#0f172a")
+        .attr("font-size", 9)
+        .text(d => (d.depth === 4 && maxDepth === 4 ? d.data.name : ""))
+        .each(function(d) {
+          const w = d.x1 - d.x0;
+          const h = d.y1 - d.y0;
+          const show = d.depth === 4 && maxDepth === 4 && w > 60 && h > 18;
+          d3.select(this)
+            .attr("opacity", show ? 1 : 0)
+            .attr("x", 6)
+            .attr("y", 14);
+        });
+    }
+
+    function getFilteredPlayers() {
+      const selectedLeagues = getSelected("league");
+      const selectedSeasons = getSelected("season");
+      const selectedPositions = getSelected("position");
+      const selectedTeams = getSelected("team");
+      const scope = playerScopeSelect.property("value");
+      const count = getPlayerCount();
+      const minMinutes = +minMinutesInput.property("value");
+
+      const availableTeams = new Set();
+      allPlayers.forEach(p => {
+        if (p.time >= minMinutes && selectedLeagues.has(p.league) && selectedPositions.has(p.position) && selectedSeasons.has(p.season)) {
+          availableTeams.add(p.team);
+        }
+      });
+
+      let effectiveTeams = new Set();
+      const selectedTeamsValid = Array.from(selectedTeams).filter(team => availableTeams.has(team));
+      if (teamFilterTouched && selectedTeamsValid.length > 0) {
+        selectedTeamsValid.forEach(team => effectiveTeams.add(team));
+      } else {
+        availableTeams.forEach(team => effectiveTeams.add(team));
+      }
+
+      let filtered = allPlayers.filter(p =>
+        p.time >= minMinutes &&
+        selectedLeagues.has(p.league) &&
+        selectedSeasons.has(p.season) &&
+        selectedPositions.has(p.position) &&
+        effectiveTeams.has(p.team)
+      );
+
+      if (scope !== "all") {
+        const sizeMetric = sizeMetricSelect.property("value");
+        const sorted = filtered.slice().sort((a, b) => (+b[sizeMetric] || 0) - (+a[sizeMetric] || 0));
+        filtered = scope === "top"
+          ? sorted.slice(0, count)
+          : sorted.slice(-count);
+      }
+
+      const teamItems = Array.from(availableTeams).sort();
+      buildOptions(teamOptionsEl, teamItems, "team", effectiveTeams);
+
+      summaryEl.text(`Players: ${filtered.length} | Min minutes: ${minMinutes}`);
+      return filtered;
+    }
+
+    function render() {
+      maxDepthValue.text(maxDepthInput.property("value"));
+      minMinutesValue.text(minMinutesInput.property("value"));
+      renderTreemap(getFilteredPlayers());
+    }
+
+    function attachEvents() {
+      document.body.addEventListener("change", event => {
+        if (event.target && event.target.matches("input[data-type], select, input[type=\"range\"], #player-count")) {
+          if (event.target.matches("input[data-type=\"team\"]")) {
+            teamFilterTouched = true;
+          } else if (event.target.matches("input[data-type=\"league\"], input[data-type=\"season\"], input[data-type=\"position\"]")) {
+            teamFilterTouched = false;
+          }
+          render();
+        }
+      });
+
+      if (shotTypeFiltersEl) {
+        shotTypeFiltersEl.addEventListener("change", () => {
+          if (currentPlayer) renderShotMap(currentPlayer);
+        });
+      }
+      if (shotResultFiltersEl) {
+        shotResultFiltersEl.addEventListener("change", () => {
+          if (currentPlayer) renderShotMap(currentPlayer);
+        });
+      }
+
+      document.body.addEventListener("input", event => {
+        if (event.target && event.target.matches("#max-depth, #min-minutes")) {
+          if (event.target.id === "max-depth") {
+            maxDepthValue.text(event.target.value);
+          }
+          if (event.target.id === "min-minutes") {
+            minMinutesValue.text(event.target.value);
+          }
+          render();
+        }
+      });
+
+      document.querySelectorAll(".mini-actions button").forEach(button => {
+        button.addEventListener("click", () => {
+          const type = button.getAttribute("data-target");
+          const action = button.getAttribute("data-action");
+          setAll(type, action === "all");
+          if (type === "team") {
+            teamFilterTouched = true;
+          } else {
+            teamFilterTouched = false;
+          }
+          render();
+        });
+      });
+    }
+
+    function renderPlayerDetail(player, sizeMetric, colorMetric) {
+      if (!player) return;
+      const sizeLabel = metrics.find(m => m.key === sizeMetric)?.label || sizeMetric;
+      const colorLabel = metrics.find(m => m.key === colorMetric)?.label || colorMetric;
+      const sizeValue = (+player[sizeMetric] || 0).toFixed(2);
+      const colorValue = Number.isFinite(+player[colorMetric]) ? (+player[colorMetric]).toFixed(2) : "N/A";
+      const detail = `
+        <div class="detail-header">
+          <div class="detail-name">${player.name}</div>
+          <div class="detail-pill">${player.position}</div>
+        </div>
+        <div class="detail-sub">${player.team} - ${leagueLabels[player.league] || player.league} - ${player.season}</div>
+        <div class="detail-grid">
+          <div class="detail-box">
+            <div class="detail-label">${sizeLabel}</div>
+            <div class="detail-value">${sizeValue}</div>
+          </div>
+          <div class="detail-box">
+            <div class="detail-label">${colorLabel}</div>
+            <div class="detail-value">${colorValue}</div>
+          </div>
+          <div class="detail-box">
+            <div class="detail-label">Minutes</div>
+            <div class="detail-value">${player.time}</div>
+          </div>
+          <div class="detail-box">
+            <div class="detail-label">Games</div>
+            <div class="detail-value">${player.games}</div>
+          </div>
+        </div>
+        <div class="detail-lines">
+          Goals: ${player.goals} | Assists: ${player.assists} | xA: ${player.xA.toFixed(2)}<br>
+          Shots: ${player.shots} | Key Passes: ${player.key_passes} | Goals/90: ${player.gp90.toFixed(2)} | Assists/90: ${player.ap90.toFixed(2)}
+        </div>
+      `;
+      detailEl.html(detail);
+      currentPlayer = player;
+      renderShotMap(player);
+    }
+
+    async function init() {
+      statusEl.text("Loading...");
+      [allPlayers, allShots] = await Promise.all([loadAllPlayers(), loadAllShots()]);
+
+      setMetricOptions(sizeMetricSelect, "goals");
+      setMetricOptions(colorMetricSelect, "xG");
+
+      const leagueItems = leagues.map(value => ({
+        value,
+        label: leagueLabels[value] || value
+      }));
+      buildOptions(leagueOptionsEl, leagueItems, "league", new Set(leagues));
+      const seasons = Array.from(new Set(allPlayers.map(p => p.season))).sort();
+      buildOptions(seasonOptionsEl, seasons, "season", new Set(seasons));
+      buildOptions(positionOptionsEl, positions, "position", new Set(positions));
+      const allTeams = Array.from(new Set(allPlayers.map(p => p.team))).sort();
+      buildOptions(teamOptionsEl, allTeams, "team", new Set(allTeams));
+
+      const maxMinutes = d3.max(allPlayers, d => d.time) || 0;
+      const maxMinutesRounded = Math.ceil(maxMinutes / 50) * 50;
+      minMinutesInput.attr("max", maxMinutesRounded).property("value", 0);
+      minMinutesMax.text(maxMinutesRounded);
+      minMinutesValue.text("0");
+
+      attachEvents();
+      renderShotLegends();
+      renderShotMap(null);
+      render();
+      statusEl.text("Ready");
+    }
+
+    init().catch(err => {
+      console.error(err);
+      statusEl.text("Error");
+    });
+</script>
+</body>
+</html>
+
+
+
