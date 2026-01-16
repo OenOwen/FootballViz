@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Understat Treemap Explorer</title>
+  <title>Tree Map Football Stats - Top 5 Leagues</title>
   <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
   <style>
     :root {
@@ -350,8 +350,7 @@
   <div class="panel">
     <div class="header">
       <div>
-        <h1>Understat Treemap Explorer</h1>
-        <p>Compare player attributes across leagues, teams, and positions using an interactive treemap.</p>
+        <h1>Tree Map Football Stats - Top 5 Leagues</h1>
       </div>
       <span id="status" class="badge">Loading...</span>
     </div>
@@ -1233,13 +1232,10 @@
         }
       });
 
-      let effectiveTeams = new Set();
       const selectedTeamsValid = Array.from(selectedTeams).filter(team => availableTeams.has(team));
-      if (teamFilterTouched && selectedTeamsValid.length > 0) {
-        selectedTeamsValid.forEach(team => effectiveTeams.add(team));
-      } else {
-        availableTeams.forEach(team => effectiveTeams.add(team));
-      }
+      const effectiveTeams = teamFilterTouched
+        ? new Set(selectedTeamsValid)
+        : new Set(availableTeams);
 
       let filtered = allPlayers.filter(p =>
         p.time >= minMinutes &&
@@ -1258,7 +1254,8 @@
       }
 
       const teamItems = Array.from(availableTeams).sort();
-      buildOptions(teamOptionsEl, teamItems, "team", effectiveTeams);
+      const teamSelections = teamFilterTouched ? new Set(selectedTeamsValid) : new Set(availableTeams);
+      buildOptions(teamOptionsEl, teamItems, "team", teamSelections);
 
       summaryEl.text(`Players: ${filtered.length} | Min minutes: ${minMinutes}`);
       return filtered;
@@ -1275,8 +1272,6 @@
         if (event.target && event.target.matches("input[data-type], select, input[type=\"range\"], #player-count")) {
           if (event.target.matches("input[data-type=\"team\"]")) {
             teamFilterTouched = true;
-          } else if (event.target.matches("input[data-type=\"league\"], input[data-type=\"season\"], input[data-type=\"position\"]")) {
-            teamFilterTouched = false;
           }
           render();
         }
@@ -1312,8 +1307,6 @@
           setAll(type, action === "all");
           if (type === "team") {
             teamFilterTouched = true;
-          } else {
-            teamFilterTouched = false;
           }
           render();
         });
@@ -1398,6 +1391,5 @@
 </script>
 </body>
 </html>
-
 
 
